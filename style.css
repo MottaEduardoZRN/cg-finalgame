@@ -1,0 +1,12 @@
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Remove barras de rolagem */
+    background-color: #000;
+}
+
+canvas {
+    display: block; /* Remove espaço extra embaixo do canvas */
+    width: 100vw;
+    height: 100vh;
+}
