@@ -8,7 +8,7 @@ export async function loadObjFile(url) {
 }
 
 // Função que "traduz" o texto OBJ para Arrays do WebGL
-function parseObj(text) {
+export function parseObj(text) {
     const positions = [];
     const colors = []; // Vamos gerar cores aleatórias para ver as faces
     
