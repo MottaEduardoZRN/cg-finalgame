@@ -1,23 +1,19 @@
 // js/main.js
 import { vsSource, fsSource } from './shaders.js';
+import { loadObjFile } from './loader.js'; // Importamos nosso carregador
 
 let gl;
-// Variáveis para guardar a rotação (para animar depois)
-let squareRotation = 0.0; 
+let shipRotation = 0.0; 
 
-function main() {
+// A função main agora é ASYNC porque precisa esperar o download do arquivo
+async function main() {
     const canvas = document.getElementById("glcanvas");
     gl = canvas.getContext("webgl");
 
-    if (!gl) {
-        alert("Navegador sem suporte a WebGL.");
-        return;
-    }
+    if (!gl) { alert("Sem WebGL"); return; }
 
-    // 1. Compilar os Shaders
     const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
 
-    // 2. Guardar as localizações das variáveis do Shader (para usar depois)
     const programInfo = {
         program: shaderProgram,
         attribLocations: {
@@ -30,103 +26,85 @@ function main() {
         },
     };
 
-    // 3. Criar os Buffers (os dados do quadrado)
-    const buffers = initBuffers(gl);
+    // --- MUDANÇA PRINCIPAL AQUI ---
+    // Carregamos a nave do arquivo
+    console.log("Carregando nave...");
+    const shipData = await loadObjFile('assets/nave.obj');
+    
+    // Criamos os buffers com os dados da nave, não mais do quadrado
+    const buffers = initBuffers(gl, shipData);
+    console.log("Nave carregada!");
 
-    // 4. Loop de renderização (desenha repetidamente)
+    // Loop de renderização
     let then = 0;
     function render(now) {
-        now *= 0.001;  // converte para segundos
+        now *= 0.001;
         const deltaTime = now - then;
         then = now;
 
-        drawScene(gl, programInfo, buffers, deltaTime);
+        // Passamos o vertexCount da nave para saber quantos triângulos desenhar
+        drawScene(gl, programInfo, buffers, deltaTime, shipData.vertexCount);
         requestAnimationFrame(render);
     }
     requestAnimationFrame(render);
 }
 
-// --- FUNÇÕES AUXILIARES ---
-
-function initBuffers(gl) {
-    // A. Buffer de Posição (Onde estão os vértices do quadrado?)
+function initBuffers(gl, objectData) {
+    // Buffer de Posição
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.positions), gl.STATIC_DRAW);
 
-    const positions = [
-        1.0,  1.0,
-       -1.0,  1.0,
-        1.0, -1.0,
-       -1.0, -1.0,
-    ];
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
-    // B. Buffer de Cor (Qual a cor de cada vértice?)
+    // Buffer de Cor
     const colorBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-
-    const colors = [
-        1.0, 1.0, 1.0, 1.0,    // Branco
-        1.0, 0.0, 0.0, 1.0,    // Vermelho
-        0.0, 1.0, 0.0, 1.0,    // Verde
-        0.0, 0.0, 1.0, 1.0,    // Azul
-    ];
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.colors), gl.STATIC_DRAW);
 
     return { position: positionBuffer, color: colorBuffer };
 }
 
-function drawScene(gl, programInfo, buffers, deltaTime) {
-    resizeCanvas(gl.canvas); // Garante tamanho correto
+function drawScene(gl, programInfo, buffers, deltaTime, vertexCount) {
+    resizeCanvas(gl.canvas);
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
-    gl.clearDepth(1.0); 
     gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // --- CÁLCULO DAS MATRIZES (A MÁGICA 3D) ---
-    
-    // 1. Matriz de Projeção (Lente da câmera: 45 graus, 0.1 perto, 100 longe)
+    // Projeção
     const fieldOfView = 45 * Math.PI / 180;
     const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-    const zNear = 0.1;
-    const zFar = 100.0;
     const projectionMatrix = mat4.create();
-    mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+    mat4.perspective(projectionMatrix, fieldOfView, aspect, 0.1, 100.0);
 
-    // 2. Matriz ModelView (Onde o objeto está no mundo)
+    // Movimento da Câmera/Objeto
     const modelViewMatrix = mat4.create();
-    mat4.translate(modelViewMatrix, modelViewMatrix, [-0.0, 0.0, -6.0]); // Move 6 unidades para o fundo
+    mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -6.0]); // Afasta a câmera
     
-    // Rotação opcional (descomente para girar)
-    // mat4.rotate(modelViewMatrix, modelViewMatrix, squareRotation, [0, 0, 1]); 
+    // Gira a nave para vermos ela em 3D
+    mat4.rotate(modelViewMatrix, modelViewMatrix, shipRotation, [0, 1, 0]); // Gira no eixo Y
+    mat4.rotate(modelViewMatrix, modelViewMatrix, shipRotation * 0.7, [1, 0, 0]); // Gira um pouco no X
 
-    // --- CONFIGURAR O SHADER PARA DESENHAR ---
-    
-    // Diz ao WebGL como tirar os dados do buffer de POSIÇÃO
+    // Configura atributos
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-    gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0); // Note: 3 floats (xyz), não 2
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
 
-    // Diz ao WebGL como tirar os dados do buffer de COR
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
     gl.vertexAttribPointer(programInfo.attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexColor);
 
-    // Usa nosso programa
     gl.useProgram(programInfo.program);
-
-    // Envia as matrizes
     gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
     gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, modelViewMatrix);
 
-    // Desenha (4 vértices = 2 triângulos = 1 quadrado)
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // Desenha a quantidade de vértices que o parser contou (TRIANGLES, não STRIP)
+    gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
 
-    // Atualiza rotação para o próximo frame
-    squareRotation += deltaTime;
+    shipRotation += deltaTime;
 }
 
+// --- Funções boilerplate (initShaderProgram, loadShader, resizeCanvas) continuam as mesmas ---
+// Copie elas do código anterior ou mantenha no arquivo se não apagou
 function initShaderProgram(gl, vsSource, fsSource) {
     const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
     const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
@@ -142,7 +120,7 @@ function loadShader(gl, type, source) {
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        alert('Erro no shader: ' + gl.getShaderInfoLog(shader));
+        console.error(gl.getShaderInfoLog(shader));
         gl.deleteShader(shader);
         return null;
     }
@@ -155,7 +133,6 @@ function resizeCanvas(canvas) {
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
         canvas.width  = displayWidth;
         canvas.height = displayHeight;
-        gl.viewport(0, 0, canvas.width, canvas.height);
     }
 }
 
