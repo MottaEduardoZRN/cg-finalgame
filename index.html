@@ -1,25 +1,50 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGL Space Runner</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <canvas id="glcanvas"></canvas>
 
     <div id="ui-container">
+        <div id="start-screen">
+            <h1 style="color: #00ffff; font-size: 50px; text-shadow: 0 0 20px #00ffff;">WORMHOLE RUNNER</h1>
+            <p>ATENÇÃO VIAJANTE!</p>
+            <p>Perdemos o contato com nosso último piloto...</p>
+            <p>Precisamos que você assuma o comando e atravesse este <br>Buraco de Minhoca instável!</p>
+
+            <p style="margin-top: 40px; color: #ffcc00; font-size: 20px;">
+                Pressione <strong>ENTER</strong> para iniciar a missão
+            </p>
+            <p style="font-size: 14px; color: #aaa; margin-top: 10px;">
+                Controles: Setas/WASD para mover | Espaço para atirar
+            </p>
+        </div>
+
         <div id="score">Pontos: 0</div>
-        
+
         <div id="level">NÍVEL 1</div>
 
         <div id="hp">HP: 5</div>
-        
+
         <div id="game-over" class="hidden">
             <h1>GAME OVER</h1>
             <p>Sua Nave Explodiu!</p>
             <p>Pressione <strong>ENTER</strong> para reiniciar</p>
+        </div>
+
+        <div id="game-won" class="hidden">
+            <h1>MISSÃO CUMPRIDA!</h1>
+            <p>Parabéns piloto!</p>
+            <p>Você saiu do buraco de minhoca e foi <br>
+                <strong style="color: #00ff00; font-size: 30px;">APROVADO EM COMPUTAÇÃO GRÁFICA!</strong>
+            </p>
+            <p style="font-size: 18px; margin-top: 30px; color: #aaa;">Pressione ENTER para jogar novamente</p>
         </div>
 
         <div id="level-up" class="hidden">
@@ -32,4 +57,5 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
     <script src="js/main.js" type="module"></script>
 </body>
+
 </html>

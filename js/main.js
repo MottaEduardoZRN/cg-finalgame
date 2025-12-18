@@ -21,12 +21,15 @@ let playerHP = 5;
 let playerHitFlash = 0; 
 let timeSinceLastSpawn = 0;
 let isGameOver = false;
+let isGameWon = false; 
 let lastShotTime = 0; 
+
+// Variável de Início
+let isGameStarted = false; 
 
 // Variáveis de Nível
 let currentLevel = 1;
 let spawnInterval = 1.5; 
-// Como o score reseta, a meta é fixa por nível (300 pontos para passar)
 let levelTargetScore = 300; 
 let isLevelUpPaused = false; 
 
@@ -36,17 +39,36 @@ const hpElement = document.getElementById("hp");
 const levelElement = document.getElementById("level");
 const gameOverElement = document.getElementById("game-over");
 const levelUpElement = document.getElementById("level-up");
-const levelMsgElement = document.getElementById("level-msg"); // NOVO (Mensagem dinâmica)
+const levelMsgElement = document.getElementById("level-msg");
+const gameWonElement = document.getElementById("game-won");
+const startScreenElement = document.getElementById("start-screen");
 
 async function main() {
     const canvas = document.getElementById("glcanvas");
     gl = canvas.getContext("webgl");
     if (!gl) { alert("Sem WebGL"); return; }
 
+    // --- CORREÇÃO AQUI: FORÇAR ESTADO INICIAL DA UI ---
+    // Garante que o HUD comece escondido e o Menu apareça, 
+    // independente de como está no HTML.
+    if(scoreElement) scoreElement.classList.add("hidden");
+    if(levelElement) levelElement.classList.add("hidden");
+    if(hpElement) hpElement.classList.add("hidden");
+    if(startScreenElement) startScreenElement.classList.remove("hidden");
+    // --------------------------------------------------
+
     document.addEventListener('keydown', (event) => {
         handleKeyDown(event);
         if (event.key === 'c' || event.key === 'C') cameraMode = (cameraMode + 1) % 2;
+        
+        // LÓGICA DE START
+        if (!isGameStarted && event.key === 'Enter') {
+            startGame();
+            return;
+        }
+
         if (isGameOver && event.key === 'Enter') resetGame();
+        if (isGameWon && event.key === 'Enter') resetGame();
         if (isLevelUpPaused && event.key === 'Enter') nextLevel();
     });
     document.addEventListener('keyup', handleKeyUp);
@@ -97,12 +119,16 @@ async function main() {
         gl.enable(gl.DEPTH_TEST);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        if (!isGameOver && !isLevelUpPaused) {
+        // Lógica só roda se o jogo começou
+        if (isGameStarted && !isGameOver && !isLevelUpPaused && !isGameWon) {
             updateGame(deltaTime, now);
         }
 
         const speed = 5.0 * deltaTime;
-        tunnelOffset += speed * 5.0;
+        
+        // Túnel roda devagar no menu
+        const tunnelSpeed = isGameStarted ? 5.0 : 1.0; 
+        tunnelOffset += speed * tunnelSpeed;
         if (tunnelOffset > 5.0) tunnelOffset = 0;
 
         const viewMatrix = mat4.create();
@@ -113,17 +139,26 @@ async function main() {
         }
 
         // DESENHO
+        
+        // 1. Nave (Desenha no menu também)
         if (cameraMode === 0) {
             const rot = isGameOver ? now * 5 : shipRotation;
             if(playerHitFlash > 0) playerHitFlash -= deltaTime;
             const isShipFlashing = playerHitFlash > 0 ? 1.0 : 0.0;
+            const finalRot = isGameWon ? now * 2 : rot; 
+            
+            // No menu a nave gira sozinha
+            const menuRot = isGameStarted ? finalRot : now * 0.5;
+
             drawObject(gl, programInfo, shipBuffers, shipData.vertexCount,
-                shipPosition, [0, Math.PI, rot], [1, 1, 1], viewMatrix, isShipFlashing);
+                shipPosition, [0, Math.PI, menuRot], [1, 1, 1], viewMatrix, isShipFlashing);
         }
 
+        // 2. Túnel
         drawObject(gl, programInfo, tunnelBuffers, tunnelData.vertexCount,
             [0, 0, 10 + tunnelOffset], [0, 0, now * 0.2], [1, 1, 1], viewMatrix);
 
+        // 3. Obstáculos
         for (const obs of obstacles) {
             const seed = obs.position[2];
             if(obs.hitFlash > 0) obs.hitFlash -= deltaTime;
@@ -133,6 +168,7 @@ async function main() {
                 obs.position, [now + seed, now * 0.7 + seed, now * 0.2], [scale, scale, scale], viewMatrix, isFlashing);
         }
 
+        // 4. Tiros
         for (const shot of shots) {
             drawObject(gl, programInfo, laserBuffers, laserData.vertexCount,
                 shot.position, [0, 0, 0], [1, 1, 1], viewMatrix);
@@ -143,10 +179,20 @@ async function main() {
     requestAnimationFrame(render);
 }
 
+function startGame() {
+    isGameStarted = true;
+    startScreenElement.classList.add("hidden");
+    
+    // Mostra o HUD
+    scoreElement.classList.remove("hidden");
+    levelElement.classList.remove("hidden");
+    hpElement.classList.remove("hidden");
+}
+
 function updateGame(deltaTime, now) {
     const speed = 8.0 * deltaTime;
 
-    // Movimento Nave
+    // Movimento
     if (keys['ArrowLeft'] || keys['a']) { shipPosition[0] -= speed; shipRotation = 0.5; }
     else if (keys['ArrowRight'] || keys['d']) { shipPosition[0] += speed; shipRotation = -0.5; }
     else { shipRotation = 0.0; }
@@ -160,16 +206,19 @@ function updateGame(deltaTime, now) {
     if (shipPosition[1] > limit) shipPosition[1] = limit;
     if (shipPosition[1] < -limit) shipPosition[1] = -limit;
 
-    // TIRO
+    // Tiro
     if (keys[' '] && now - lastShotTime > 0.2) { 
         spawnShot();
         lastShotTime = now;
     }
 
-    // --- LÓGICA DE LEVEL UP (MUDOU!) ---
-    // Agora checamos se o score ATUAL passou da meta fixa (300)
+    // Vitória Check
     if (score >= levelTargetScore) {
-        showLevelUpScreen();
+        if (currentLevel >= 10) {
+            gameWon();
+        } else {
+            showLevelUpScreen();
+        }
         return; 
     }
 
@@ -178,8 +227,6 @@ function updateGame(deltaTime, now) {
     if (timeSinceLastSpawn > spawnInterval) { 
         spawnObstacle();
         timeSinceLastSpawn = 0;
-        
-        // SCORE POR SOBREVIVÊNCIA: Mude este número '1' se quiser
         score += 1; 
         scoreElement.innerText = "Pontos: " + score;
     }
@@ -209,10 +256,7 @@ function updateGame(deltaTime, now) {
         
         if (obs.hp <= 0) {
             obstacles.splice(i, 1);
-            
-            // SCORE POR DESTRUIÇÃO
-            score += 25; 
-            
+            score += 50; 
             scoreElement.innerText = "Pontos: " + score;
             continue;
         }
@@ -247,41 +291,34 @@ function spawnShot() {
 function showLevelUpScreen() {
     isLevelUpPaused = true;
     if (levelUpElement) {
-        // Verifica se vai ganhar vida no PRÓXIMO nível (currentLevel + 1)
-        // Se (Nível + 1) é divisível por 5, então o próximo é especial
         const nextLvl = currentLevel + 1;
         if (nextLvl % 5 === 0) {
-            // Se for nível múltiplo de 5, muda a mensagem
             levelMsgElement.innerText = "PARABÉNS PILOTO! BÔNUS: +1 VIDA!";
-            levelMsgElement.style.color = "#33ff33"; // Verde
+            levelMsgElement.style.color = "#33ff33"; 
         } else {
-            // Mensagem padrão
             levelMsgElement.innerText = "Prepare-se para mais asteroides...";
             levelMsgElement.style.color = "white";
         }
-        
         levelUpElement.classList.remove("hidden");
     }
 }
 
 function nextLevel() {
     currentLevel++;
+
+    if (currentLevel > 10) {
+        gameWon();
+        return;
+    }
     
-    // ZERA O SCORE
     score = 0;
     scoreElement.innerText = "Pontos: 0";
-    
-    // Aumenta dificuldade
     spawnInterval = Math.max(0.3, spawnInterval - 0.2); 
     
-    // --- LÓGICA DE VIDA EXTRA ---
-    // Se o nível atual é múltiplo de 5, ganha vida
     if (currentLevel % 5 === 0) {
         playerHP++;
         hpElement.innerText = "HP: " + playerHP;
-        console.log("Vida Extra Concedida!");
     }
-    // ----------------------------
 
     if (levelElement) levelElement.innerText = "NÍVEL " + currentLevel;
     if (levelUpElement) levelUpElement.classList.add("hidden");
@@ -289,6 +326,15 @@ function nextLevel() {
     isLevelUpPaused = false;
     obstacles = [];
     shots = [];
+    
+    console.log("Nível " + currentLevel + " iniciado!");
+}
+
+function gameWon() {
+    isGameWon = true;
+    isLevelUpPaused = false; 
+    levelUpElement.classList.add("hidden"); 
+    gameWonElement.classList.remove("hidden"); 
 }
 
 function gameOver() {
@@ -304,17 +350,32 @@ function resetGame() {
     playerHitFlash = 0;
     currentLevel = 1;
     spawnInterval = 1.5;
+    
     isLevelUpPaused = false;
+    isGameOver = false;
+    isGameWon = false; 
+    
+    isGameStarted = false; // Volta para o menu
+    
     shipPosition = [0.0, 0.0, -6.0];
     scoreElement.innerText = "Pontos: 0";
     hpElement.innerText = "HP: 5";
     levelElement.innerText = "NÍVEL 1";
+    
     if(gameOverElement) gameOverElement.classList.add("hidden");
     if(levelUpElement) levelUpElement.classList.add("hidden");
+    if(gameWonElement) gameWonElement.classList.add("hidden"); 
+    
+    // Força o estado do menu inicial
+    if (!isGameStarted) {
+        startScreenElement.classList.remove("hidden");
+        scoreElement.classList.add("hidden");
+        levelElement.classList.add("hidden");
+        hpElement.classList.add("hidden");
+    }
 }
 
-// ... (Funções Auxiliares initBuffers, drawObject, etc... MANTENHA IGUAL) ...
-// Copie as funções auxiliares do código anterior
+// --- Funções Auxiliares (Iguais) ---
 function initBuffers(gl, objectData) {
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
