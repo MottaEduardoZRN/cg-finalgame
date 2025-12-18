@@ -1,48 +1,64 @@
+/* style.css */
+
+/* =============================================================================
+   CONFIGURAÇÕES GERAIS DA PÁGINA
+   Define o fundo preto, remove margens e define a fonte "Tech" (Courier).
+   ============================================================================= */
 body {
     margin: 0;
-    overflow: hidden;
+    overflow: hidden; /* Impede barras de rolagem */
     background-color: #000;
-    font-family: 'Courier New', Courier, monospace; /* Fonte "Tech" */
+    font-family: 'Courier New', Courier, monospace; /* Fonte monoespaçada estilo terminal */
     color: white;
 }
 
+/* Garante que o Canvas ocupe 100% da tela */
 canvas {
     display: block;
     width: 100vw;
     height: 100vh;
 }
 
-/* Container que cobre a tela toda, mas deixa clicar no jogo */
+/* =============================================================================
+   CONTAINER DE INTERFACE (UI)
+   Uma camada transparente que fica POR CIMA do canvas 3D.
+   ============================================================================= */
 #ui-container {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    pointer-events: none; /* Permite que cliques passem para o jogo (se precisar) */
+    /* 'pointer-events: none' é CRUCIAL: permite clicar "através" da UI 
+       para que o jogo receba os cliques, se necessário. */
+    pointer-events: none; 
 }
 
-/* TELA INICIAL */
+/* =============================================================================
+   TELA INICIAL (MENU PRINCIPAL)
+   Caixa centralizada contendo a história e instruções.
+   ============================================================================= */
 #start-screen {
     position: absolute;
     top: 50%;
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%); /* Centralização perfeita vertical/horizontal */
     text-align: center;
-    background: rgba(0, 0, 0, 0.95);
+    background: rgba(0, 0, 0, 0.95); /* Fundo quase opaco */
     
-    /* Reduzi o padding de 50px para 40px para ficar mais compacto */
     padding: 40px; 
     
-    border: 2px solid #00ffff;
+    /* Estilo "Holográfico/Neon" */
+    border: 2px solid #00ffff; 
     border-radius: 20px;
-    box-shadow: 0 0 40px rgba(0, 255, 255, 0.3);
-    pointer-events: auto;
-    z-index: 200;
+    box-shadow: 0 0 40px rgba(0, 255, 255, 0.3); /* Glow ciano */
     
-    /* --- AQUI ESTÁ A CORREÇÃO --- */
-    width: 90%;       /* Em telas pequenas (celular), usa 90% do espaço */
-    max-width: 700px; /* Em telas grandes (PC), nunca passa de 700px */
+    pointer-events: auto; /* Reativa cliques para botões/menus */
+    z-index: 200; /* Fica na frente de tudo */
+    
+    /* Responsividade: Garante que não fique largo demais em monitores grandes */
+    width: 90%;       
+    max-width: 700px; 
 }
 
 #start-screen p {
@@ -51,48 +67,58 @@ canvas {
     color: #e0e0e0;
 }
 
+/* Animação de piscar para textos importantes ("Pressione Enter") */
 @keyframes blink {
     0% { opacity: 1; }
     50% { opacity: 0.5; }
     100% { opacity: 1; }
 }
 
-/* PLACAR (SCORE) */
+/* =============================================================================
+   HUD (HEADS-UP DISPLAY)
+   Elementos que ficam fixos na tela durante o jogo (Placar, Vida, Nível).
+   ============================================================================= */
+
+/* Placar: Canto Superior Esquerdo */
 #score {
     position: absolute;
     top: 20px;
     left: 20px;
-    font-size: 32px; /* AUMENTADO (Era 24px) */
+    font-size: 32px; 
     font-weight: bold;
     color: #00ffcc; /* Azul Neon */
-    text-shadow: 0 0 10px #00ffcc; /* Glow mais forte */
+    text-shadow: 0 0 10px #00ffcc; 
 }
 
-/* VIDA (HP) */
+/* Vida (HP): Canto Superior Direito */
 #hp {
     position: absolute;
     top: 20px;
     right: 20px;
-    font-size: 32px; /* AUMENTADO (Era 24px) */
+    font-size: 32px; 
     font-weight: bold;
-    /* MUDANÇA DE COR: Verde Neon (Mais fácil de ler que vermelho) */
-    color: #33ff33; 
+    color: #33ff33; /* Verde Neon */
     text-shadow: 0 0 10px #00ff00;
 }
 
-/* NÍVEL (Centro Superior) */
+/* Indicador de Nível: Centro Superior */
 #level {
     position: absolute;
     top: 20px;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translateX(-50%); /* Centraliza horizontalmente */
     font-size: 32px;
     font-weight: bold;
     color: #ffcc00; /* Amarelo Ouro */
     text-shadow: 0 0 10px #ffcc00;
 }
 
-/* TELA DE LEVEL UP */
+/* =============================================================================
+   POPUPS E MODAIS (VITÓRIA, DERROTA, LEVEL UP)
+   Telas que aparecem momentaneamente ou ao fim do jogo.
+   ============================================================================= */
+
+/* Transição de Nível (Azul) */
 #level-up {
     position: absolute;
     top: 50%;
@@ -101,7 +127,7 @@ canvas {
     text-align: center;
     background: rgba(0, 0, 0, 0.9);
     padding: 40px;
-    border: 4px solid #00ccff; /* Azul Ciano */
+    border: 4px solid #00ccff;
     border-radius: 15px;
     box-shadow: 0 0 30px #00ccff;
     pointer-events: auto;
@@ -118,14 +144,14 @@ canvas {
     font-size: 24px;
 }
 
-/* Tela de Game Over Centralizada */
+/* Game Over (Vermelho/Alerta) */
 #game-over {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     text-align: center;
-    background: rgba(0, 0, 0, 0.8); /* Fundo semi-transparente */
+    background: rgba(0, 0, 0, 0.8);
     padding: 40px;
     border: 2px solid #ff0055;
     border-radius: 10px;
@@ -138,20 +164,20 @@ canvas {
     margin: 0 0 20px 0;
 }
 
-/* TELA DE VITÓRIA */
+/* Tela de Vitória Final (Verde/Sucesso) */
 #game-won {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     text-align: center;
-    background: rgba(0, 0, 0, 0.95); /* Fundo quase preto sólido */
+    background: rgba(0, 0, 0, 0.95);
     padding: 50px;
-    border: 4px solid #00ff00; /* Borda Verde Neon */
+    border: 4px solid #00ff00;
     border-radius: 20px;
-    box-shadow: 0 0 50px #00ff00; /* Glow intenso */
+    box-shadow: 0 0 50px #00ff00;
     pointer-events: auto;
-    z-index: 100; /* Garante que fique na frente de tudo */
+    z-index: 100;
 }
 
 #game-won h1 {
@@ -166,7 +192,9 @@ canvas {
     line-height: 1.5;
 }
 
-/* Classe para esconder elementos */
+/* =============================================================================
+   CLASSES UTILITÁRIAS
+   ============================================================================= */
 .hidden {
-    display: none;
+    display: none; /* Remove o elemento da tela */
 }
