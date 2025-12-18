@@ -2,28 +2,48 @@
 
 export const vsSource = `
     attribute vec4 aVertexPosition;
-    // NÃO TEM MAIS aVertexColor
-    attribute vec2 aTextureCoord; // NOVO: Coordenada da textura (UV)
+    attribute vec2 aTextureCoord;
     attribute vec3 aVertexNormal;
 
     uniform mat4 uModelViewMatrix;
     uniform mat4 uProjectionMatrix;
     uniform mat4 uNormalMatrix; 
+    
+    uniform float uUseLighting; 
 
-    varying highp vec2 vTextureCoord; // Passa pro Fragment
+    varying highp vec2 vTextureCoord;
     varying highp vec3 vLighting;
 
     void main(void) {
         gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-        vTextureCoord = aTextureCoord; // Passa adiante
+        vTextureCoord = aTextureCoord;
 
-        // Luz
-        highp vec3 ambientLight = vec3(0.3, 0.3, 0.3);
-        highp vec3 directionalLightColor = vec3(1, 1, 1);
-        highp vec3 directionalVector = normalize(vec3(0.85, 0.8, 0.75));
-        highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 0.0);
-        highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0);
-        vLighting = ambientLight + (directionalLightColor * directional);
+        if (uUseLighting > 0.5) {
+            // 1. LUZ AMBIENTE
+            highp vec3 ambientLight = vec3(0.2, 0.2, 0.2);
+
+            highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 0.0);
+            highp vec3 normal = normalize(transformedNormal.xyz);
+
+            // 2. LUZ PRINCIPAL (Sol - Vem de Cima/Direita)
+            // Ilumina o topo e o lado da nave
+            highp vec3 lightADir = normalize(vec3(0.5, 1.0, 0.5));
+            highp vec3 lightAColor = vec3(1.0, 0.9, 0.8); // Luz Quente
+            highp float directionalA = max(dot(normal, lightADir), 0.0);
+
+            // 3. LUZ DE PREENCHIMENTO (Flash da Câmera - Vem de Trás/Z+)
+            // ESSENCIAL: Ilumina a traseira da nave que a gente vê!
+            highp vec3 lightBDir = normalize(vec3(-0.5, 0.2, 1.0));
+            highp vec3 lightBColor = vec3(0.4, 0.4, 0.5); // Luz Fria/Metálica
+            highp float directionalB = max(dot(normal, lightBDir), 0.0);
+
+            // Soma tudo
+            vLighting = ambientLight + (lightAColor * directionalA) + (lightBColor * directionalB);
+        } 
+        else {
+            // Sem luz (Túnel/Laser) = Brilho máximo
+            vLighting = vec3(1.0, 1.0, 1.0);
+        }
     }
 `;
 
