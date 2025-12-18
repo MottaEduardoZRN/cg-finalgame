@@ -19,8 +19,8 @@ export const vsSource = `
         vTextureCoord = aTextureCoord;
 
         if (uUseLighting > 0.5) {
-            // 1. LUZ AMBIENTE (Aumentei para 0.5 para clarear a base)
-            highp vec3 ambientLight = vec3(0.5, 0.5, 0.5);
+            // 1. LUZ AMBIENTE
+            highp vec3 ambientLight = vec3(0.2, 0.2, 0.2);
 
             highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 0.0);
             highp vec3 normal = normalize(transformedNormal.xyz);
@@ -33,7 +33,7 @@ export const vsSource = `
 
             // 3. LUZ DE PREENCHIMENTO (Flash da Câmera - Vem de Trás/Z+)
             // ESSENCIAL: Ilumina a traseira da nave que a gente vê!
-            highp vec3 lightBDir = normalize(vec3(0.0, 0.2, 1.0)); 
+            highp vec3 lightBDir = normalize(vec3(-0.5, 0.2, 1.0));
             highp vec3 lightBColor = vec3(0.4, 0.4, 0.5); // Luz Fria/Metálica
             highp float directionalB = max(dot(normal, lightBDir), 0.0);
 
