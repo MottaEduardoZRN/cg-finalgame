@@ -2,12 +2,13 @@
 export function createLaserData() {
     const positions = [];
     const normals = [];
-    const textureCoords = []; // NOVO
+    const textureCoords = []; 
 
     const w = 0.1; 
     const l = 0.8; 
     
-    const v = [
+    // MUDANÇA: Renomeei de 'v' para 'vertices' para não dar conflito
+    const vertices = [
         [-w, -w,  l], [ w, -w,  l], [ w,  w,  l], [-w,  w,  l], 
         [-w, -w, -l], [-w,  w, -l], [ w,  w, -l], [ w, -w, -l], 
     ];
@@ -28,8 +29,10 @@ export function createLaserData() {
         addVertex(face[0], 0, 0); addVertex(face[1], 1, 0); addVertex(face[2], 1, 1);
         addVertex(face[0], 0, 0); addVertex(face[2], 1, 1); addVertex(face[3], 0, 1);
 
+        // Função auxiliar interna
         function addVertex(idx, u, v) {
-            positions.push(...v[idx]);
+            // AGORA USA 'vertices' (o array) e não 'v' (o argumento da função)
+            positions.push(...vertices[idx]); 
             normals.push(...normal);
             textureCoords.push(u, v);
         }

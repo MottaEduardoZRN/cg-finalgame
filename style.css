@@ -30,19 +30,31 @@ canvas {
     transform: translate(-50%, -50%);
     text-align: center;
     background: rgba(0, 0, 0, 0.95);
-    padding: 50px;
-    border: 2px solid #00ffff; /* Ciano Neon */
+    
+    /* Reduzi o padding de 50px para 40px para ficar mais compacto */
+    padding: 40px; 
+    
+    border: 2px solid #00ffff;
     border-radius: 20px;
     box-shadow: 0 0 40px rgba(0, 255, 255, 0.3);
     pointer-events: auto;
-    z-index: 200; /* Fica na frente de tudo */
-    width: 60%; /* Um pouco mais largo para o texto caber */
+    z-index: 200;
+    
+    /* --- AQUI ESTÁ A CORREÇÃO --- */
+    width: 90%;       /* Em telas pequenas (celular), usa 90% do espaço */
+    max-width: 700px; /* Em telas grandes (PC), nunca passa de 700px */
 }
 
 #start-screen p {
     font-size: 22px;
     line-height: 1.6;
     color: #e0e0e0;
+}
+
+@keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
 }
 
 /* PLACAR (SCORE) */
