@@ -30,10 +30,21 @@ export const vsSource = `
 `;
 
 export const fsSource = `
+    precision mediump float; // Necessário definir precisão
     varying lowp vec4 vColor;
     varying highp vec3 vLighting;
 
+    uniform float uFlash; // 0.0 = Normal, 1.0 = Flash Branco
+
     void main(void) {
-        gl_FragColor = vec4(vColor.rgb * vLighting, vColor.a);
+        vec3 finalColor = vColor.rgb * vLighting;
+        
+        // Se uFlash for maior que 0, misturamos com branco
+        if(uFlash > 0.5) {
+            // R=1.0 (Vermelho), G=0.3, B=0.3 
+            finalColor = vec3(1.0, 0.3, 0.3); 
+        }
+
+        gl_FragColor = vec4(finalColor, vColor.a);
     }
 `;
