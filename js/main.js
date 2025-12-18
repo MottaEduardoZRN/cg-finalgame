@@ -244,7 +244,7 @@ function updateGame(deltaTime, now) {
         const obs = obstacles[i];
         if (obs.hp <= 0) {
             obstacles.splice(i, 1);
-            score += 300; 
+            score += 50; 
             scoreElement.innerText = "Pontos: " + score;
             continue;
         }
