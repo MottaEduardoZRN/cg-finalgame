@@ -1,25 +1,40 @@
 // js/main.js
 import { vsSource, fsSource } from './shaders.js';
-import { loadObjFile } from './loader.js'; // Importamos nosso carregador
-import { createTunnelData } from './tunnel.js'; // Importamos o túnel
+import { loadObjFile } from './loader.js';
+import { createTunnelData } from './tunnel.js';
+import { createAsteroidData } from './asteroid.js';
 
 let gl;
-let shipRotation = 0.0; 
+let shipRotation = 0.0;
 
-// Variáveis de Estado do Jogo
-let shipPosition = [0.0, 0.0, -6.0]; // X, Y, Z inicial
-let keys = {}; // Guarda quais teclas estão pressionadas
+// Variáveis de Estado
+let shipPosition = [0.0, 0.0, -6.0];
+let keys = {};
+let cameraMode = 0; // 0 = TPS, 1 = FPS
 
-// A função main agora é ASYNC porque precisa esperar o download do arquivo
+// --- VARIÁVEIS DO JOGO (Faltava isso!) ---
+let obstacles = []; // Lista de inimigos
+let score = 0;
+let timeSinceLastSpawn = 0;
+let isGameOver = false;
+
 async function main() {
-
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('keyup', handleKeyUp);
-
     const canvas = document.getElementById("glcanvas");
     gl = canvas.getContext("webgl");
 
     if (!gl) { alert("Sem WebGL"); return; }
+
+    // --- CONFIGURAÇÃO DO TECLADO ---
+    document.addEventListener('keydown', (event) => {
+        handleKeyDown(event);
+        if (event.key === 'c' || event.key === 'C') {
+            cameraMode = (cameraMode + 1) % 2;
+        }
+        // Reiniciar se der Game Over
+        if (isGameOver && event.key === 'Enter') resetGame();
+    });
+
+    document.addEventListener('keyup', handleKeyUp);
 
     const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
 
@@ -28,139 +43,233 @@ async function main() {
         attribLocations: {
             vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
             vertexColor: gl.getAttribLocation(shaderProgram, 'aVertexColor'),
-            vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'), // NOVO
+            vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
         },
         uniformLocations: {
             projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
             modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-            normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'), // NOVO
+            normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
         },
     };
 
-    // --- MUDANÇA PRINCIPAL AQUI ---
-    // Carregamos a nave do arquivo
-    console.log("Carregando nave...");
+    console.log("Carregando assets...");
     const shipData = await loadObjFile('assets/nave.obj');
-    
-    // Carregamento do Túnel
-    const shipBuffers = initBuffers(gl, shipData); // Renomeie para shipBuffers
+    const shipBuffers = initBuffers(gl, shipData);
 
-    // CRIA O TÚNEL: Raio 10, Comprimento 200, 8 lados (octógono), 20 anéis
     const tunnelData = createTunnelData(8.0, 100.0, 8, 20);
     const tunnelBuffers = initBuffers(gl, tunnelData);
 
-    // Criamos os buffers com os dados da nave, não mais do quadrado
-    const buffers = initBuffers(gl, shipData);
-    console.log("Nave carregada!");
+    // --- CRIA O ASTEROIDE ---
+    const asteroidData = createAsteroidData(0.8, 4);
+    const asteroidBuffers = initBuffers(gl, asteroidData);
+
+    console.log("Assets carregados! Iniciando Loop...");
 
     // Loop de renderização
+    let tunnelOffset = 0;
     let then = 0;
+
     function render(now) {
         now *= 0.001;
         const deltaTime = now - then;
         then = now;
 
-        // --- LÓGICA DO JOGO (UPDATE) ---
-        const speed = 5.0 * deltaTime; // Velocidade de movimento
+        resizeCanvas(gl.canvas);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        if (keys['ArrowLeft'] || keys['a']) {
-            shipPosition[0] -= speed; // Move para esquerda
-            shipRotation = 0.5; // Inclina a nave visualmente
-        } else if (keys['ArrowRight'] || keys['d']) {
-            shipPosition[0] += speed; // Move para direita
-            shipRotation = -0.5; // Inclina para o outro lado
-        } else {
-            shipRotation = 0.0; // Volta ao normal
+        // --- ATUALIZA A LÓGICA (Se não for game over) ---
+        if (!isGameOver) {
+            updateGame(deltaTime);
         }
-        
-        if (keys['ArrowUp'] || keys['w']) shipPosition[1] += speed;
-        if (keys['ArrowDown'] || keys['s']) shipPosition[1] -= speed;
 
-        // --- DESENHO (DRAW) ---
-        drawScene(gl, programInfo, buffers, deltaTime, shipData.vertexCount);
-        
+        // Movimento do Túnel
+        const speed = 5.0 * deltaTime;
+        tunnelOffset += speed * 5.0;
+        if (tunnelOffset > 5.0) tunnelOffset = 0;
+
+        // --- CÂMERA ---
+        const viewMatrix = mat4.create();
+        if (cameraMode === 0) {
+            // TPS
+            mat4.lookAt(viewMatrix, [0, 1, 0], [0, 0, -10], [0, 1, 0]);
+        } else {
+            // FPS
+            mat4.lookAt(viewMatrix, shipPosition, [shipPosition[0], shipPosition[1], -20], [0, 1, 0]);
+        }
+
+        // --- DESENHO ---
+
+        // 1. Nave (Desenha se estiver vivo e em TPS. Se Game Over, gira loucamente)
+        if (cameraMode === 0) {
+            const rot = isGameOver ? now * 5 : shipRotation;
+            drawObject(gl, programInfo, shipBuffers, shipData.vertexCount,
+                shipPosition, [0, Math.PI, rot], [1, 1, 1], viewMatrix);
+        }
+
+        // 2. Túnel
+        // 'now * 0.2' faz ele girar constantemente no eixo Z
+        drawObject(gl, programInfo, tunnelBuffers, tunnelData.vertexCount, 
+                  [0, 0, 10 + tunnelOffset], [0, 0, now * 0.3], [1, 1, 1], viewMatrix);
+
+        // 3. Obstáculos (Asteroides)
+        for (const obs of obstacles) {
+            // Usa a posição Z como semente para a rotação aleatória
+            const seed = obs.position[2];
+            drawObject(gl, programInfo, asteroidBuffers, asteroidData.vertexCount,
+                obs.position,
+                [now + seed, now * 0.7 + seed, now * 0.2], // Rotação
+                [1, 1, 1], viewMatrix);
+        }
+
         requestAnimationFrame(render);
     }
+
     requestAnimationFrame(render);
 }
 
+// --- LÓGICA DO JOGO (Faltava tudo isso!) ---
+function updateGame(deltaTime) {
+    const speed = 8.0 * deltaTime; // Nave mais rápida para desviar
+
+    // Controles Nave
+    if (keys['ArrowLeft'] || keys['a']) { shipPosition[0] -= speed; shipRotation = 0.5; }
+    else if (keys['ArrowRight'] || keys['d']) { shipPosition[0] += speed; shipRotation = -0.5; }
+    else { shipRotation = 0.0; }
+
+    if (keys['ArrowUp'] || keys['w']) shipPosition[1] += speed;
+    if (keys['ArrowDown'] || keys['s']) shipPosition[1] -= speed;
+
+    // Limites do Túnel
+    const limit = 3.5;
+    if (shipPosition[0] > limit) shipPosition[0] = limit;
+    if (shipPosition[0] < -limit) shipPosition[0] = -limit;
+    if (shipPosition[1] > limit) shipPosition[1] = limit;
+    if (shipPosition[1] < -limit) shipPosition[1] = -limit;
+
+    // Gerar Obstáculos
+    timeSinceLastSpawn += deltaTime;
+    if (timeSinceLastSpawn > 1.0) { // 1 Asteroide por segundo
+        spawnObstacle();
+        timeSinceLastSpawn = 0;
+        score += 10;
+        document.title = "Score: " + score;
+    }
+
+    // Mover Obstáculos e Colisão
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.position[2] += 20.0 * deltaTime; // Velocidade do asteroide vindo
+
+        // Colisão (Distância entre nave e asteroide)
+        const dist = Math.sqrt(
+            Math.pow(shipPosition[0] - obs.position[0], 2) +
+            Math.pow(shipPosition[1] - obs.position[1], 2) +
+            Math.pow(shipPosition[2] - obs.position[2], 2)
+        );
+
+        if (dist < 1.3) { // Se bateu
+            gameOver();
+        }
+
+        // Remove se passou da tela
+        if (obs.position[2] > 2.0) {
+            obstacles.splice(i, 1);
+        }
+    }
+}
+
+function spawnObstacle() {
+    const x = (Math.random() * 6) - 3;
+    const y = (Math.random() * 6) - 3;
+    obstacles.push({
+        position: [x, y, -100.0] // Nasce longe no fundo
+    });
+}
+
+function gameOver() {
+    isGameOver = true;
+    alert("GAME OVER! Score: " + score + "\nENTER para reiniciar.");
+}
+
+function resetGame() {
+    obstacles = [];
+    score = 0;
+    shipPosition = [0.0, 0.0, -6.0];
+    isGameOver = false;
+}
+
+// --- FUNÇÕES AUXILIARES ---
+
 function initBuffers(gl, objectData) {
-    // Buffer de Posição
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.positions), gl.STATIC_DRAW);
 
-    // Buffer de Cor
     const colorBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.colors), gl.STATIC_DRAW);
 
-    // Buffer de Normais
     const normalBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.normals), gl.STATIC_DRAW);
 
-    return { 
-        position: positionBuffer, 
-        color: colorBuffer, 
-        normal: normalBuffer // Retorne o novo buffer
+    return {
+        position: positionBuffer,
+        color: colorBuffer,
+        normal: normalBuffer
     };
 }
 
-function drawScene(gl, programInfo, buffers, deltaTime, vertexCount) {
-    resizeCanvas(gl.canvas);
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);
-    gl.enable(gl.DEPTH_TEST);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+function drawObject(gl, programInfo, buffers, vertexCount, position, rotation, scale, viewMatrix) {
+    const modelMatrix = mat4.create();
+    mat4.translate(modelMatrix, modelMatrix, position);
 
-    // 1. Projeção
-    const fieldOfView = 45 * Math.PI / 180;
-    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-    const projectionMatrix = mat4.create();
-    mat4.perspective(projectionMatrix, fieldOfView, aspect, 0.1, 100.0);
+    if (rotation) {
+        mat4.rotate(modelMatrix, modelMatrix, rotation[0], [1, 0, 0]);
+        mat4.rotate(modelMatrix, modelMatrix, rotation[1], [0, 1, 0]);
+        mat4.rotate(modelMatrix, modelMatrix, rotation[2], [0, 0, 1]);
+    }
 
-    // 2. Movimento (ModelView)
+    if (scale) {
+        mat4.scale(modelMatrix, modelMatrix, scale);
+    }
+
     const modelViewMatrix = mat4.create();
-    mat4.translate(modelViewMatrix, modelViewMatrix, shipPosition);
-    mat4.rotate(modelViewMatrix, modelViewMatrix, shipRotation, [0, 0, 1]); // Inclinação Z
-    mat4.rotate(modelViewMatrix, modelViewMatrix, Math.PI, [0, 1, 0]);      // Vira para frente
+    mat4.multiply(modelViewMatrix, viewMatrix, modelMatrix);
 
-    // 3. Matriz Normal (Inversa Transposta da ModelView)
     const normalMatrix = mat4.create();
     mat4.invert(normalMatrix, modelViewMatrix);
     mat4.transpose(normalMatrix, normalMatrix);
 
-    // 4. Configurar WebGL para usar nosso shader
-    gl.useProgram(programInfo.program);
-
-    // 5. Ligar os Buffers (Atributos)
-    // Posição
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
     gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
 
-    // Cor
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
     gl.vertexAttribPointer(programInfo.attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexColor);
 
-    // Normais (Luz)
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
     gl.vertexAttribPointer(programInfo.attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexNormal);
 
-    // 6. Enviar as Matrizes (Uniforms)
+    gl.useProgram(programInfo.program);
+
+    const fieldOfView = 45 * Math.PI / 180;
+    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+    const projectionMatrix = mat4.create();
+    mat4.perspective(projectionMatrix, fieldOfView, aspect, 0.1, 200.0);
+
     gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
     gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, modelViewMatrix);
     gl.uniformMatrix4fv(programInfo.uniformLocations.normalMatrix, false, normalMatrix);
 
-    // 7. Desenhar (Apenas UMA vez)
     gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
 }
 
-// --- Funções boilerplate (initShaderProgram, loadShader, resizeCanvas) continuam as mesmas ---
-// Copie elas do código anterior ou mantenha no arquivo se não apagou
 function initShaderProgram(gl, vsSource, fsSource) {
     const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
     const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
@@ -184,22 +293,17 @@ function loadShader(gl, type, source) {
 }
 
 function resizeCanvas(canvas) {
-    const displayWidth  = canvas.clientWidth;
-    const displayHeight = canvas.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    const displayWidth = Math.round(canvas.clientWidth * dpr);
+    const displayHeight = Math.round(canvas.clientHeight * dpr);
+
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-        canvas.width  = displayWidth;
+        canvas.width = displayWidth;
         canvas.height = displayHeight;
     }
 }
 
-// Funções para gerenciar o teclado (coloque no final do arquivo)
-function handleKeyDown(event) {
-    keys[event.key] = true;
-}
+function handleKeyDown(event) { keys[event.key] = true; }
+function handleKeyUp(event) { keys[event.key] = false; }
 
-function handleKeyUp(event) {
-    keys[event.key] = false;
-}
-
-// Inicia
 window.onload = main;
