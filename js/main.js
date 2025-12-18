@@ -4,6 +4,7 @@ import { loadObjFile } from './loader.js';
 import { createTunnelData } from './tunnel.js';
 import { createAsteroidData } from './asteroid.js';
 import { createLaserData } from './laser.js'; 
+import { initTextures } from './textures.js'; // --- NOVO: Importa as texturas ---
 
 let gl;
 let shipRotation = 0.0;
@@ -24,7 +25,6 @@ let isGameOver = false;
 let isGameWon = false; 
 let lastShotTime = 0; 
 
-// Variável de Início
 let isGameStarted = false; 
 
 // Variáveis de Nível
@@ -48,20 +48,16 @@ async function main() {
     gl = canvas.getContext("webgl");
     if (!gl) { alert("Sem WebGL"); return; }
 
-    // --- CORREÇÃO AQUI: FORÇAR ESTADO INICIAL DA UI ---
-    // Garante que o HUD comece escondido e o Menu apareça, 
-    // independente de como está no HTML.
+    // Inicialização UI
     if(scoreElement) scoreElement.classList.add("hidden");
     if(levelElement) levelElement.classList.add("hidden");
     if(hpElement) hpElement.classList.add("hidden");
     if(startScreenElement) startScreenElement.classList.remove("hidden");
-    // --------------------------------------------------
 
     document.addEventListener('keydown', (event) => {
         handleKeyDown(event);
         if (event.key === 'c' || event.key === 'C') cameraMode = (cameraMode + 1) % 2;
         
-        // LÓGICA DE START
         if (!isGameStarted && event.key === 'Enter') {
             startGame();
             return;
@@ -79,7 +75,8 @@ async function main() {
         program: shaderProgram,
         attribLocations: {
             vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-            vertexColor: gl.getAttribLocation(shaderProgram, 'aVertexColor'),
+            // --- MUDANÇA: Sai Color, Entra TextureCoord ---
+            textureCoord: gl.getAttribLocation(shaderProgram, 'aTextureCoord'),
             vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
         },
         uniformLocations: {
@@ -87,8 +84,12 @@ async function main() {
             modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
             normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
             flash: gl.getUniformLocation(shaderProgram, 'uFlash'), 
+            uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'), // --- NOVO: Onde vai a imagem ---
         },
     }
+
+    // --- NOVO: GERA AS TEXTURAS NA MEMÓRIA ---
+    const textures = initTextures(gl);
 
     console.log("Carregando assets...");
     const shipData = await loadObjFile('assets/nave.obj');
@@ -119,14 +120,11 @@ async function main() {
         gl.enable(gl.DEPTH_TEST);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        // Lógica só roda se o jogo começou
         if (isGameStarted && !isGameOver && !isLevelUpPaused && !isGameWon) {
             updateGame(deltaTime, now);
         }
 
         const speed = 5.0 * deltaTime;
-        
-        // Túnel roda devagar no menu
         const tunnelSpeed = isGameStarted ? 5.0 : 1.0; 
         tunnelOffset += speed * tunnelSpeed;
         if (tunnelOffset > 5.0) tunnelOffset = 0;
@@ -138,39 +136,38 @@ async function main() {
             mat4.lookAt(viewMatrix, shipPosition, [shipPosition[0], shipPosition[1], -20], [0, 1, 0]);
         }
 
-        // DESENHO
+        // --- DESENHO COM TEXTURAS ---
         
-        // 1. Nave (Desenha no menu também)
+        // 1. Nave -> Textura 'ship'
         if (cameraMode === 0) {
             const rot = isGameOver ? now * 5 : shipRotation;
             if(playerHitFlash > 0) playerHitFlash -= deltaTime;
             const isShipFlashing = playerHitFlash > 0 ? 1.0 : 0.0;
             const finalRot = isGameWon ? now * 2 : rot; 
-            
-            // No menu a nave gira sozinha
             const menuRot = isGameStarted ? finalRot : now * 0.5;
 
-            drawObject(gl, programInfo, shipBuffers, shipData.vertexCount,
+            drawObject(gl, programInfo, shipBuffers, shipData.vertexCount, textures.ship, 
                 shipPosition, [0, Math.PI, menuRot], [1, 1, 1], viewMatrix, isShipFlashing);
         }
 
-        // 2. Túnel
-        drawObject(gl, programInfo, tunnelBuffers, tunnelData.vertexCount,
+        // 2. Túnel -> Textura 'tunnel' (Grade Neon)
+        drawObject(gl, programInfo, tunnelBuffers, tunnelData.vertexCount, textures.tunnel,
             [0, 0, 10 + tunnelOffset], [0, 0, now * 0.2], [1, 1, 1], viewMatrix);
 
-        // 3. Obstáculos
+        // 3. Obstáculos -> Textura 'asteroid' (Rocha)
         for (const obs of obstacles) {
             const seed = obs.position[2];
             if(obs.hitFlash > 0) obs.hitFlash -= deltaTime;
             const isFlashing = obs.hitFlash > 0 ? 1.0 : 0.0;
             const scale = obs.hitFlash > 0 ? 0.9 : 1.0; 
-            drawObject(gl, programInfo, asteroidBuffers, asteroidData.vertexCount,
+            
+            drawObject(gl, programInfo, asteroidBuffers, asteroidData.vertexCount, textures.asteroid,
                 obs.position, [now + seed, now * 0.7 + seed, now * 0.2], [scale, scale, scale], viewMatrix, isFlashing);
         }
 
-        // 4. Tiros
+        // 4. Tiros -> Textura 'laser'
         for (const shot of shots) {
-            drawObject(gl, programInfo, laserBuffers, laserData.vertexCount,
+            drawObject(gl, programInfo, laserBuffers, laserData.vertexCount, textures.laser,
                 shot.position, [0, 0, 0], [1, 1, 1], viewMatrix);
         }
 
@@ -182,8 +179,6 @@ async function main() {
 function startGame() {
     isGameStarted = true;
     startScreenElement.classList.add("hidden");
-    
-    // Mostra o HUD
     scoreElement.classList.remove("hidden");
     levelElement.classList.remove("hidden");
     hpElement.classList.remove("hidden");
@@ -192,7 +187,6 @@ function startGame() {
 function updateGame(deltaTime, now) {
     const speed = 8.0 * deltaTime;
 
-    // Movimento
     if (keys['ArrowLeft'] || keys['a']) { shipPosition[0] -= speed; shipRotation = 0.5; }
     else if (keys['ArrowRight'] || keys['d']) { shipPosition[0] += speed; shipRotation = -0.5; }
     else { shipRotation = 0.0; }
@@ -206,13 +200,11 @@ function updateGame(deltaTime, now) {
     if (shipPosition[1] > limit) shipPosition[1] = limit;
     if (shipPosition[1] < -limit) shipPosition[1] = -limit;
 
-    // Tiro
     if (keys[' '] && now - lastShotTime > 0.2) { 
         spawnShot();
         lastShotTime = now;
     }
 
-    // Vitória Check
     if (score >= levelTargetScore) {
         if (currentLevel >= 10) {
             gameWon();
@@ -222,7 +214,6 @@ function updateGame(deltaTime, now) {
         return; 
     }
 
-    // Spawn Obstáculos
     timeSinceLastSpawn += deltaTime;
     if (timeSinceLastSpawn > spawnInterval) { 
         spawnObstacle();
@@ -231,7 +222,6 @@ function updateGame(deltaTime, now) {
         scoreElement.innerText = "Pontos: " + score;
     }
 
-    // Tiros
     for (let i = shots.length - 1; i >= 0; i--) {
         const shot = shots[i];
         shot.position[2] -= 30.0 * deltaTime; 
@@ -250,10 +240,8 @@ function updateGame(deltaTime, now) {
         if (hit) shots.splice(i, 1);
     }
 
-    // Obstáculos
     for (let i = obstacles.length - 1; i >= 0; i--) {
         const obs = obstacles[i];
-        
         if (obs.hp <= 0) {
             obstacles.splice(i, 1);
             score += 50; 
@@ -263,7 +251,6 @@ function updateGame(deltaTime, now) {
 
         obs.position[2] += 15.0 * deltaTime; 
 
-        // Colisão Nave
         const dist = Math.sqrt(Math.pow(shipPosition[0] - obs.position[0], 2) + Math.pow(shipPosition[1] - obs.position[1], 2) + Math.pow(shipPosition[2] - obs.position[2], 2));
         if (dist < 1.3) {
             playerHP -= 1;
@@ -273,7 +260,6 @@ function updateGame(deltaTime, now) {
             if (playerHP <= 0) gameOver();
             continue; 
         }
-
         if (obs.position[2] > 2.0) obstacles.splice(i, 1);
     }
 }
@@ -305,11 +291,7 @@ function showLevelUpScreen() {
 
 function nextLevel() {
     currentLevel++;
-
-    if (currentLevel > 10) {
-        gameWon();
-        return;
-    }
+    if (currentLevel > 10) { gameWon(); return; }
     
     score = 0;
     scoreElement.innerText = "Pontos: 0";
@@ -322,12 +304,9 @@ function nextLevel() {
 
     if (levelElement) levelElement.innerText = "NÍVEL " + currentLevel;
     if (levelUpElement) levelUpElement.classList.add("hidden");
-    
     isLevelUpPaused = false;
     obstacles = [];
     shots = [];
-    
-    console.log("Nível " + currentLevel + " iniciado!");
 }
 
 function gameWon() {
@@ -350,12 +329,10 @@ function resetGame() {
     playerHitFlash = 0;
     currentLevel = 1;
     spawnInterval = 1.5;
-    
     isLevelUpPaused = false;
     isGameOver = false;
     isGameWon = false; 
-    
-    isGameStarted = false; // Volta para o menu
+    isGameStarted = false; 
     
     shipPosition = [0.0, 0.0, -6.0];
     scoreElement.innerText = "Pontos: 0";
@@ -366,7 +343,6 @@ function resetGame() {
     if(levelUpElement) levelUpElement.classList.add("hidden");
     if(gameWonElement) gameWonElement.classList.add("hidden"); 
     
-    // Força o estado do menu inicial
     if (!isGameStarted) {
         startScreenElement.classList.remove("hidden");
         scoreElement.classList.add("hidden");
@@ -375,24 +351,31 @@ function resetGame() {
     }
 }
 
-// --- Funções Auxiliares (Iguais) ---
+// --- FUNÇÕES AUXILIARES ALTERADAS PARA TEXTURA ---
+
 function initBuffers(gl, objectData) {
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.positions), gl.STATIC_DRAW);
 
-    const colorBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.colors), gl.STATIC_DRAW);
+    // --- MUDANÇA: Texture Coordinates em vez de Colors ---
+    const textureCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.textureCoords), gl.STATIC_DRAW);
 
     const normalBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.normals), gl.STATIC_DRAW);
 
-    return { position: positionBuffer, color: colorBuffer, normal: normalBuffer };
+    return { 
+        position: positionBuffer, 
+        textureCoord: textureCoordBuffer, // Retorna UVs
+        normal: normalBuffer 
+    };
 }
 
-function drawObject(gl, programInfo, buffers, vertexCount, position, rotation, scale, viewMatrix, flash = 0.0) {
+// --- MUDANÇA: Nova assinatura do drawObject para receber 'texture' ---
+function drawObject(gl, programInfo, buffers, vertexCount, texture, position, rotation, scale, viewMatrix, flash = 0.0) {
     const modelMatrix = mat4.create();
     mat4.translate(modelMatrix, modelMatrix, position);
     if(rotation) {
@@ -413,9 +396,10 @@ function drawObject(gl, programInfo, buffers, vertexCount, position, rotation, s
     gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
-    gl.vertexAttribPointer(programInfo.attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(programInfo.attribLocations.vertexColor);
+    // --- MUDANÇA: Bind Texture Coords ---
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.textureCoord);
+    gl.vertexAttribPointer(programInfo.attribLocations.textureCoord, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(programInfo.attribLocations.textureCoord);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
     gl.vertexAttribPointer(programInfo.attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
@@ -423,6 +407,11 @@ function drawObject(gl, programInfo, buffers, vertexCount, position, rotation, s
 
     gl.useProgram(programInfo.program);
     
+    // --- MUDANÇA: Ativar e Bindar Textura ---
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(programInfo.uniformLocations.uSampler, 0);
+
     const fieldOfView = 45 * Math.PI / 180;
     const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
     const projectionMatrix = mat4.create();
@@ -437,6 +426,7 @@ function drawObject(gl, programInfo, buffers, vertexCount, position, rotation, s
     gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
 }
 
+// ... Resto (initShaderProgram, loadShader, resizeCanvas, etc) IGUAL ...
 function initShaderProgram(gl, vsSource, fsSource) {
     const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
     const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
