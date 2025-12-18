@@ -1,5 +1,3 @@
-# cg-finalgame
-
 # 🚀 Wormhole Runner
 
 > Trabalho Acadêmico Final da disciplina de Computação Gráfica.
