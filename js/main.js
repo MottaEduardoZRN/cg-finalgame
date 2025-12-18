@@ -286,7 +286,7 @@ function updateGame(deltaTime, now) {
         const obs = obstacles[i];
         if (obs.hp <= 0) {
             obstacles.splice(i, 1);
-            score += 50; 
+            score += 300; 
             scoreElement.innerText = "Pontos: " + score;
             continue;
         }
@@ -294,6 +294,7 @@ function updateGame(deltaTime, now) {
         obs.position[2] += 15.0 * deltaTime; // Asteroide vem em direção à câmera
 
         // Colisão com a Nave
+        // Distância Euclidiana
         const dist = Math.sqrt(Math.pow(shipPosition[0] - obs.position[0], 2) + Math.pow(shipPosition[1] - obs.position[1], 2) + Math.pow(shipPosition[2] - obs.position[2], 2));
         if (dist < 1.3) {
             playerHP -= 1;
