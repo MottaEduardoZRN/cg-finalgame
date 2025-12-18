@@ -3,7 +3,7 @@ import { vsSource, fsSource } from './shaders.js';
 import { loadObjFile } from './loader.js';
 import { createTunnelData } from './tunnel.js';
 import { createAsteroidData } from './asteroid.js';
-import { createLaserData } from './laser.js'; // NOVO: Importa o laser
+import { createLaserData } from './laser.js'; 
 
 let gl;
 let shipRotation = 0.0;
@@ -15,26 +15,39 @@ let cameraMode = 0;
 
 // VARIÁVEIS DO JOGO
 let obstacles = []; 
-let shots = []; // NOVO: Lista de tiros
+let shots = []; 
 let score = 0;
+let playerHP = 5;
+let playerHitFlash = 0; 
 let timeSinceLastSpawn = 0;
 let isGameOver = false;
-let lastShotTime = 0; // Para limitar a velocidade do tiro (Cooldown)
+let lastShotTime = 0; 
+
+// Variáveis de Nível
+let currentLevel = 1;
+let spawnInterval = 1.5; 
+// Como o score reseta, a meta é fixa por nível (300 pontos para passar)
+let levelTargetScore = 300; 
+let isLevelUpPaused = false; 
 
 // Cache UI
 const scoreElement = document.getElementById("score");
+const hpElement = document.getElementById("hp"); 
+const levelElement = document.getElementById("level");
 const gameOverElement = document.getElementById("game-over");
+const levelUpElement = document.getElementById("level-up");
+const levelMsgElement = document.getElementById("level-msg"); // NOVO (Mensagem dinâmica)
 
 async function main() {
     const canvas = document.getElementById("glcanvas");
     gl = canvas.getContext("webgl");
     if (!gl) { alert("Sem WebGL"); return; }
 
-    // --- INPUTS ---
     document.addEventListener('keydown', (event) => {
         handleKeyDown(event);
         if (event.key === 'c' || event.key === 'C') cameraMode = (cameraMode + 1) % 2;
         if (isGameOver && event.key === 'Enter') resetGame();
+        if (isLevelUpPaused && event.key === 'Enter') nextLevel();
     });
     document.addEventListener('keyup', handleKeyUp);
 
@@ -43,18 +56,14 @@ async function main() {
     const programInfo = {
         program: shaderProgram,
         attribLocations: {
-            // ... (seus atributos iguais) ...
             vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
             vertexColor: gl.getAttribLocation(shaderProgram, 'aVertexColor'),
             vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
         },
         uniformLocations: {
-            // ... (seus uniforms iguais) ...
             projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
             modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
             normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
-            
-            // --- NOVO: Variável do Flash ---
             flash: gl.getUniformLocation(shaderProgram, 'uFlash'), 
         },
     }
@@ -69,7 +78,6 @@ async function main() {
     const asteroidData = createAsteroidData(0.8, 4);
     const asteroidBuffers = initBuffers(gl, asteroidData);
 
-    // CARREGA O LASER
     const laserData = createLaserData();
     const laserBuffers = initBuffers(gl, laserData);
 
@@ -89,7 +97,7 @@ async function main() {
         gl.enable(gl.DEPTH_TEST);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        if (!isGameOver) {
+        if (!isGameOver && !isLevelUpPaused) {
             updateGame(deltaTime, now);
         }
 
@@ -105,38 +113,26 @@ async function main() {
         }
 
         // DESENHO
-        
-        // 1. Nave
         if (cameraMode === 0) {
             const rot = isGameOver ? now * 5 : shipRotation;
+            if(playerHitFlash > 0) playerHitFlash -= deltaTime;
+            const isShipFlashing = playerHitFlash > 0 ? 1.0 : 0.0;
             drawObject(gl, programInfo, shipBuffers, shipData.vertexCount,
-                shipPosition, [0, Math.PI, rot], [1, 1, 1], viewMatrix);
+                shipPosition, [0, Math.PI, rot], [1, 1, 1], viewMatrix, isShipFlashing);
         }
 
-        // 2. Túnel
         drawObject(gl, programInfo, tunnelBuffers, tunnelData.vertexCount,
             [0, 0, 10 + tunnelOffset], [0, 0, now * 0.2], [1, 1, 1], viewMatrix);
 
-        // 3. Obstáculos
         for (const obs of obstacles) {
             const seed = obs.position[2];
-            
-            // Lógica do Flash: Se hitFlash > 0, manda 1.0 (Ligar), senão 0.0 (Desligar)
-            // Também mantemos a escala tremendo um pouco
             if(obs.hitFlash > 0) obs.hitFlash -= deltaTime;
             const isFlashing = obs.hitFlash > 0 ? 1.0 : 0.0;
             const scale = obs.hitFlash > 0 ? 0.9 : 1.0; 
-
             drawObject(gl, programInfo, asteroidBuffers, asteroidData.vertexCount,
-                obs.position,
-                [now + seed, now * 0.7 + seed, now * 0.2], 
-                [scale, scale, scale], 
-                viewMatrix,
-                isFlashing // <--- Passamos o flash aqui no final!
-            );
+                obs.position, [now + seed, now * 0.7 + seed, now * 0.2], [scale, scale, scale], viewMatrix, isFlashing);
         }
 
-        // 4. TIROS (NOVO)
         for (const shot of shots) {
             drawObject(gl, programInfo, laserBuffers, laserData.vertexCount,
                 shot.position, [0, 0, 0], [1, 1, 1], viewMatrix);
@@ -158,129 +154,167 @@ function updateGame(deltaTime, now) {
     if (keys['ArrowUp'] || keys['w']) shipPosition[1] += speed;
     if (keys['ArrowDown'] || keys['s']) shipPosition[1] -= speed;
 
-    // Limites
     const limit = 3.5;
     if (shipPosition[0] > limit) shipPosition[0] = limit;
     if (shipPosition[0] < -limit) shipPosition[0] = -limit;
     if (shipPosition[1] > limit) shipPosition[1] = limit;
     if (shipPosition[1] < -limit) shipPosition[1] = -limit;
 
-    // ATIRAR (Spacebar)
-    if (keys[' '] && now - lastShotTime > 0.2) { // Cooldown de 0.2s
+    // TIRO
+    if (keys[' '] && now - lastShotTime > 0.2) { 
         spawnShot();
         lastShotTime = now;
     }
 
-    // Gerar Obstáculos
+    // --- LÓGICA DE LEVEL UP (MUDOU!) ---
+    // Agora checamos se o score ATUAL passou da meta fixa (300)
+    if (score >= levelTargetScore) {
+        showLevelUpScreen();
+        return; 
+    }
+
+    // Spawn Obstáculos
     timeSinceLastSpawn += deltaTime;
-    if (timeSinceLastSpawn > 1.5) { // Um pouco mais devagar para dar tempo de atirar
+    if (timeSinceLastSpawn > spawnInterval) { 
         spawnObstacle();
         timeSinceLastSpawn = 0;
-        score += 1; // Ponto pequeno por sobrevivência
+        
+        // SCORE POR SOBREVIVÊNCIA: Mude este número '1' se quiser
+        score += 1; 
         scoreElement.innerText = "Pontos: " + score;
     }
 
-    // ATUALIZAR TIROS
+    // Tiros
     for (let i = shots.length - 1; i >= 0; i--) {
         const shot = shots[i];
-        shot.position[2] -= 30.0 * deltaTime; // Tiro viaja rápido para o fundo
+        shot.position[2] -= 30.0 * deltaTime; 
+        if (shot.position[2] < -100) { shots.splice(i, 1); continue; }
 
-        // Remove tiro se for muito longe
-        if (shot.position[2] < -100) {
-            shots.splice(i, 1);
-            continue; // Vai para o próximo loop
-        }
-
-        // Checar colisão com todos os asteroides
         let hit = false;
         for (const obs of obstacles) {
-            const dist = Math.sqrt(
-                Math.pow(shot.position[0] - obs.position[0], 2) +
-                Math.pow(shot.position[1] - obs.position[1], 2) +
-                Math.pow(shot.position[2] - obs.position[2], 2)
-            );
-
-            if (dist < 1.0) { // Acertou o asteroide (raio + margem)
+            const dist = Math.sqrt(Math.pow(shot.position[0] - obs.position[0], 2) + Math.pow(shot.position[1] - obs.position[1], 2) + Math.pow(shot.position[2] - obs.position[2], 2));
+            if (dist < 1.0) { 
                 obs.hp -= 1;
-                obs.hitFlash = 0.1; // Efeito visual
+                obs.hitFlash = 0.1; 
                 hit = true;
-                if (obs.hp <= 0) {
-                    // Asteroide Destruído!
-                    // Lógica será tratada no loop de obstáculos para não quebrar array
-                }
-                break; // Tiro some ao bater
+                break; 
             }
         }
-
-        if (hit) {
-            shots.splice(i, 1);
-        }
+        if (hit) shots.splice(i, 1);
     }
 
-    // ATUALIZAR OBSTÁCULOS
+    // Obstáculos
     for (let i = obstacles.length - 1; i >= 0; i--) {
         const obs = obstacles[i];
         
-        // Verifica se morreu
         if (obs.hp <= 0) {
             obstacles.splice(i, 1);
-            score += 50; // MUITOS PONTOS POR DESTRUIR!
+            
+            // SCORE POR DESTRUIÇÃO
+            score += 25; 
+            
             scoreElement.innerText = "Pontos: " + score;
             continue;
         }
 
-        obs.position[2] += 15.0 * deltaTime; // Velocidade do asteroide
+        obs.position[2] += 15.0 * deltaTime; 
 
-        // Colisão com a NAVE
-        const dist = Math.sqrt(
-            Math.pow(shipPosition[0] - obs.position[0], 2) +
-            Math.pow(shipPosition[1] - obs.position[1], 2) +
-            Math.pow(shipPosition[2] - obs.position[2], 2)
-        );
-
+        // Colisão Nave
+        const dist = Math.sqrt(Math.pow(shipPosition[0] - obs.position[0], 2) + Math.pow(shipPosition[1] - obs.position[1], 2) + Math.pow(shipPosition[2] - obs.position[2], 2));
         if (dist < 1.3) {
-            gameOver();
+            playerHP -= 1;
+            playerHitFlash = 0.5; 
+            hpElement.innerText = "HP: " + playerHP;
+            obstacles.splice(i, 1);
+            if (playerHP <= 0) gameOver();
+            continue; 
         }
 
-        if (obs.position[2] > 2.0) {
-            obstacles.splice(i, 1);
-        }
+        if (obs.position[2] > 2.0) obstacles.splice(i, 1);
     }
 }
 
 function spawnObstacle() {
     const x = (Math.random() * 6) - 3;
     const y = (Math.random() * 6) - 3;
-    obstacles.push({ 
-        position: [x, y, -100.0],
-        hp: 5,         // AGUENTA 5 TIROS
-        hitFlash: 0    // Para efeito visual
-    });
+    obstacles.push({ position: [x, y, -100.0], hp: 5, hitFlash: 0 });
 }
 
 function spawnShot() {
-    // Cria o tiro na posição atual da nave
-    shots.push({
-        position: [shipPosition[0], shipPosition[1], shipPosition[2]]
-    });
+    shots.push({ position: [shipPosition[0], shipPosition[1], shipPosition[2]] });
+}
+
+function showLevelUpScreen() {
+    isLevelUpPaused = true;
+    if (levelUpElement) {
+        // Verifica se vai ganhar vida no PRÓXIMO nível (currentLevel + 1)
+        // Se (Nível + 1) é divisível por 5, então o próximo é especial
+        const nextLvl = currentLevel + 1;
+        if (nextLvl % 5 === 0) {
+            // Se for nível múltiplo de 5, muda a mensagem
+            levelMsgElement.innerText = "PARABÉNS PILOTO! BÔNUS: +1 VIDA!";
+            levelMsgElement.style.color = "#33ff33"; // Verde
+        } else {
+            // Mensagem padrão
+            levelMsgElement.innerText = "Prepare-se para mais asteroides...";
+            levelMsgElement.style.color = "white";
+        }
+        
+        levelUpElement.classList.remove("hidden");
+    }
+}
+
+function nextLevel() {
+    currentLevel++;
+    
+    // ZERA O SCORE
+    score = 0;
+    scoreElement.innerText = "Pontos: 0";
+    
+    // Aumenta dificuldade
+    spawnInterval = Math.max(0.3, spawnInterval - 0.2); 
+    
+    // --- LÓGICA DE VIDA EXTRA ---
+    // Se o nível atual é múltiplo de 5, ganha vida
+    if (currentLevel % 5 === 0) {
+        playerHP++;
+        hpElement.innerText = "HP: " + playerHP;
+        console.log("Vida Extra Concedida!");
+    }
+    // ----------------------------
+
+    if (levelElement) levelElement.innerText = "NÍVEL " + currentLevel;
+    if (levelUpElement) levelUpElement.classList.add("hidden");
+    
+    isLevelUpPaused = false;
+    obstacles = [];
+    shots = [];
 }
 
 function gameOver() {
     isGameOver = true;
-    gameOverElement.classList.remove("hidden");
+    if(gameOverElement) gameOverElement.classList.remove("hidden");
 }
 
 function resetGame() {
     obstacles = [];
     shots = [];
     score = 0;
+    playerHP = 5;
+    playerHitFlash = 0;
+    currentLevel = 1;
+    spawnInterval = 1.5;
+    isLevelUpPaused = false;
     shipPosition = [0.0, 0.0, -6.0];
     scoreElement.innerText = "Pontos: 0";
-    isGameOver = false;
-    gameOverElement.classList.add("hidden");
+    hpElement.innerText = "HP: 5";
+    levelElement.innerText = "NÍVEL 1";
+    if(gameOverElement) gameOverElement.classList.add("hidden");
+    if(levelUpElement) levelUpElement.classList.add("hidden");
 }
 
-// --- boilerplate ---
+// ... (Funções Auxiliares initBuffers, drawObject, etc... MANTENHA IGUAL) ...
+// Copie as funções auxiliares do código anterior
 function initBuffers(gl, objectData) {
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -337,7 +371,6 @@ function drawObject(gl, programInfo, buffers, vertexCount, position, rotation, s
     gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, modelViewMatrix);
     gl.uniformMatrix4fv(programInfo.uniformLocations.normalMatrix, false, normalMatrix);
 
-    // AGORA SIM: A variável 'flash' existe porque foi passada nos argumentos
     gl.uniform1f(programInfo.uniformLocations.flash, flash);
 
     gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
