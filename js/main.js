@@ -4,7 +4,7 @@ import { loadObjFile } from './loader.js';
 import { createTunnelData } from './tunnel.js';
 import { createAsteroidData } from './asteroid.js';
 import { createLaserData } from './laser.js'; 
-import { initTextures } from './textures.js'; // --- NOVO: Importa as texturas ---
+import { initTextures } from './textures.js'; 
 
 let gl;
 let shipRotation = 0.0;
@@ -75,7 +75,6 @@ async function main() {
         program: shaderProgram,
         attribLocations: {
             vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-            // --- MUDANÇA: Sai Color, Entra TextureCoord ---
             textureCoord: gl.getAttribLocation(shaderProgram, 'aTextureCoord'),
             vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
         },
@@ -84,11 +83,12 @@ async function main() {
             modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
             normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
             flash: gl.getUniformLocation(shaderProgram, 'uFlash'), 
-            uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'), // --- NOVO: Onde vai a imagem ---
+            uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'),
+            // NOVO: Localização do interruptor de luz
+            useLighting: gl.getUniformLocation(shaderProgram, 'uUseLighting'), 
         },
     }
 
-    // --- NOVO: GERA AS TEXTURAS NA MEMÓRIA ---
     const textures = initTextures(gl);
 
     console.log("Carregando assets...");
@@ -136,9 +136,9 @@ async function main() {
             mat4.lookAt(viewMatrix, shipPosition, [shipPosition[0], shipPosition[1], -20], [0, 1, 0]);
         }
 
-        // --- DESENHO COM TEXTURAS ---
+        // --- DESENHO COM CONTROLE DE LUZ ---
         
-        // 1. Nave -> Textura 'ship'
+        // 1. Nave -> PRECISA DE LUZ (useLighting = 1.0)
         if (cameraMode === 0) {
             const rot = isGameOver ? now * 5 : shipRotation;
             if(playerHitFlash > 0) playerHitFlash -= deltaTime;
@@ -147,14 +147,14 @@ async function main() {
             const menuRot = isGameStarted ? finalRot : now * 0.5;
 
             drawObject(gl, programInfo, shipBuffers, shipData.vertexCount, textures.ship, 
-                shipPosition, [0, Math.PI, menuRot], [1, 1, 1], viewMatrix, isShipFlashing);
+                shipPosition, [0, Math.PI, menuRot], [1, 1, 1], viewMatrix, isShipFlashing, 1.0);
         }
 
-        // 2. Túnel -> Textura 'tunnel' (Grade Neon)
+        // 2. Túnel -> NÃO TEM LUZ (useLighting = 0.0) - Fica brilhante
         drawObject(gl, programInfo, tunnelBuffers, tunnelData.vertexCount, textures.tunnel,
-            [0, 0, 10 + tunnelOffset], [0, 0, now * 0.2], [1, 1, 1], viewMatrix);
+            [0, 0, 10 + tunnelOffset], [0, 0, now * 0.2], [1, 1, 1], viewMatrix, 0.0, 0.0);
 
-        // 3. Obstáculos -> Textura 'asteroid' (Rocha)
+        // 3. Obstáculos -> PRECISA DE LUZ (useLighting = 1.0)
         for (const obs of obstacles) {
             const seed = obs.position[2];
             if(obs.hitFlash > 0) obs.hitFlash -= deltaTime;
@@ -162,13 +162,13 @@ async function main() {
             const scale = obs.hitFlash > 0 ? 0.9 : 1.0; 
             
             drawObject(gl, programInfo, asteroidBuffers, asteroidData.vertexCount, textures.asteroid,
-                obs.position, [now + seed, now * 0.7 + seed, now * 0.2], [scale, scale, scale], viewMatrix, isFlashing);
+                obs.position, [now + seed, now * 0.7 + seed, now * 0.2], [scale, scale, scale], viewMatrix, isFlashing, 1.0);
         }
 
-        // 4. Tiros -> Textura 'laser'
+        // 4. Tiros -> NÃO TEM LUZ (useLighting = 0.0) - Laser puro
         for (const shot of shots) {
             drawObject(gl, programInfo, laserBuffers, laserData.vertexCount, textures.laser,
-                shot.position, [0, 0, 0], [1, 1, 1], viewMatrix);
+                shot.position, [0, 0, 0], [1, 1, 1], viewMatrix, 0.0, 0.0);
         }
 
         requestAnimationFrame(render);
@@ -351,14 +351,11 @@ function resetGame() {
     }
 }
 
-// --- FUNÇÕES AUXILIARES ALTERADAS PARA TEXTURA ---
-
 function initBuffers(gl, objectData) {
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.positions), gl.STATIC_DRAW);
 
-    // --- MUDANÇA: Texture Coordinates em vez de Colors ---
     const textureCoordBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objectData.textureCoords), gl.STATIC_DRAW);
@@ -369,13 +366,13 @@ function initBuffers(gl, objectData) {
 
     return { 
         position: positionBuffer, 
-        textureCoord: textureCoordBuffer, // Retorna UVs
+        textureCoord: textureCoordBuffer, 
         normal: normalBuffer 
     };
 }
 
-// --- MUDANÇA: Nova assinatura do drawObject para receber 'texture' ---
-function drawObject(gl, programInfo, buffers, vertexCount, texture, position, rotation, scale, viewMatrix, flash = 0.0) {
+// --- MUDANÇA: Adicionado parâmetro 'useLighting' no final ---
+function drawObject(gl, programInfo, buffers, vertexCount, texture, position, rotation, scale, viewMatrix, flash = 0.0, useLighting = 1.0) {
     const modelMatrix = mat4.create();
     mat4.translate(modelMatrix, modelMatrix, position);
     if(rotation) {
@@ -396,7 +393,6 @@ function drawObject(gl, programInfo, buffers, vertexCount, texture, position, ro
     gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
 
-    // --- MUDANÇA: Bind Texture Coords ---
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.textureCoord);
     gl.vertexAttribPointer(programInfo.attribLocations.textureCoord, 2, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(programInfo.attribLocations.textureCoord);
@@ -407,7 +403,6 @@ function drawObject(gl, programInfo, buffers, vertexCount, texture, position, ro
 
     gl.useProgram(programInfo.program);
     
-    // --- MUDANÇA: Ativar e Bindar Textura ---
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform1i(programInfo.uniformLocations.uSampler, 0);
@@ -422,6 +417,9 @@ function drawObject(gl, programInfo, buffers, vertexCount, texture, position, ro
     gl.uniformMatrix4fv(programInfo.uniformLocations.normalMatrix, false, normalMatrix);
 
     gl.uniform1f(programInfo.uniformLocations.flash, flash);
+    
+    // --- NOVO: Envia a flag de luz ---
+    gl.uniform1f(programInfo.uniformLocations.useLighting, useLighting);
 
     gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
 }

@@ -1,10 +1,53 @@
-# Nave Espacial Simplificada (Space Runner)
+# -----------------------------------------------------------
+# ARQUIVO: nave.obj
+# PROJETO: Wormhole Runner
+# DESCRIÇÃO: Modelo 3D da nave do jogador (Estilo Low Poly / Geometria Simples)
+# FORMATO: Wavefront OBJ
+# -----------------------------------------------------------
+
+# 'o' define o nome do Objeto. Útil se tivermos vários objetos num arquivo só.
 o Nave
+
+# -----------------------------------------------------------
+# LISTA DE VÉRTICES (v X Y Z)
+# Aqui definimos os "pontos" no espaço 3D que formam o esqueleto da nave.
+# Sistema de coordenadas: X (Lado), Y (Altura), Z (Profundidade)
+# -----------------------------------------------------------
+
+# Vértice 1: O Nariz da nave (A ponta da frente)
+# X=0 (Centro), Y=0 (Chão), Z=2.0 (Bem para frente)
 v 0.0 0.0 2.0
+
+# Vértice 2: A Asa Direita (Traseira)
+# X=1.0 (Direita), Y=0 (Chão), Z=-1.0 (Para trás)
 v 1.0 0.0 -1.0
+
+# Vértice 3: A Asa Esquerda (Traseira)
+# X=-1.0 (Esquerda), Y=0 (Chão), Z=-1.0 (Para trás)
 v -1.0 0.0 -1.0
+
+# Vértice 4: O Topo da Cabine (Dá volume 3D à nave)
+# X=0 (Centro), Y=0.5 (Levantado/Alto), Z=-0.5 (Meio da nave)
 v 0.0 0.5 -0.5
+
+# -----------------------------------------------------------
+# LISTA DE FACES (f v1 v2 v3)
+# Aqui conectamos os pontos (vértices) acima para criar triângulos sólidos.
+# Os números representam a ordem dos vértices definidos acima (1, 2, 3, 4).
+# -----------------------------------------------------------
+
+# Face 1: Lateral Direita
+# Liga: Nariz(1) -> Asa Dir(2) -> Topo(4)
 f 1 2 4
+
+# Face 2: A Traseira (O "motor")
+# Liga: Asa Dir(2) -> Asa Esq(3) -> Topo(4)
 f 2 3 4
+
+# Face 3: Lateral Esquerda
+# Liga: Asa Esq(3) -> Nariz(1) -> Topo(4)
 f 3 1 4
+
+# Face 4: A Barriga (Base plana de baixo)
+# Liga: Nariz(1) -> Asa Esq(3) -> Asa Dir(2)
 f 1 3 2
